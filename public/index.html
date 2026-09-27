@@ -80,7 +80,13 @@
         <p>Select every condition that applies. FoodRx works out where they overlap and gives you one list, not three conflicting ones.</p>
       </div>
 
-      <div class="chip-grid" id="condition-grid" role="group" aria-label="Select your conditions"></div>
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="condition-search" placeholder="Search a condition…" aria-label="Search conditions">
+      </div>
+
+      <div id="condition-groups"></div>
+      <p id="no-match" class="no-match hidden">No condition matches “<span id="no-match-term"></span>”.</p>
 
       <button id="generate-btn" class="btn btn--primary btn--block" disabled>
         <span class="btn__label">Select at least one condition</span>

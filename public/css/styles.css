@@ -158,12 +158,41 @@ a{ color:var(--teal); }
 .intro h1{ font-size:30px; line-height:1.15; letter-spacing:-0.3px; }
 .intro p{ font-size:15px; max-width: 46ch; }
 
+/* ---------------- Search field ---------------- */
+.search-field{
+  display:flex; align-items:center; gap:8px;
+  border:1px solid var(--line-strong);
+  background:var(--paper-raised);
+  border-radius: var(--radius-m);
+  padding: 10px 14px;
+  margin-bottom:18px;
+  color:var(--ink-soft);
+}
+.search-field input{
+  border:none; outline:none; background:none;
+  font-family:var(--font-body); font-size:14.5px; color:var(--ink);
+  width:100%;
+}
+.search-field input::placeholder{ color:var(--ink-soft); }
+
+.no-match{
+  font-size:13.5px; text-align:center; padding: 16px 0;
+}
+
+/* ---------------- Condition categories ---------------- */
+.condition-category{ margin-bottom:20px; }
+.condition-category__title{
+  font-family:var(--font-body);
+  font-size:12px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase;
+  color:var(--ink-soft);
+  margin: 0 0 10px 2px;
+}
+
 /* ---------------- Condition chip grid ---------------- */
 .chip-grid{
   display:grid;
   grid-template-columns: 1fr 1fr;
   gap:10px;
-  margin-bottom:22px;
 }
 .chip{
   display:flex; align-items:center; gap:10px;

@@ -26,7 +26,7 @@ const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_URL = (model, key) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
-const MAX_CONDITIONS = 8;
+const MAX_CONDITIONS = 15;
 
 const SYSTEM_INSTRUCTION = `You are a clinical dietitian producing concise, safe, general dietary guidance.
 You will be given a list of medical conditions a person has been diagnosed with, together.
@@ -129,7 +129,24 @@ async function handleGenerate(request, env) {
   if (!geminiRes.ok) {
     const errText = await geminiRes.text().catch(() => "");
     console.error("Gemini error", geminiRes.status, errText);
-    return jsonResponse({ error: "The AI service returned an error. Please try again shortly." }, 502);
+
+    // Surface the real reason (truncated) so it's visible in the app's
+    // error box without needing to check Worker logs separately.
+    let detail = "";
+    try {
+      const parsedErr = JSON.parse(errText);
+      detail = parsedErr?.error?.message || "";
+    } catch {
+      detail = errText;
+    }
+    detail = detail.slice(0, 200);
+
+    return jsonResponse(
+      {
+        error: `AI service error (${geminiRes.status})${detail ? ": " + detail : ""}`,
+      },
+      502
+    );
   }
 
   const geminiJson = await geminiRes.json().catch(() => null);

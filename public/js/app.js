@@ -2,14 +2,71 @@
   "use strict";
 
   const CONDITIONS = [
-    { id: "diabetes",     label: "Diabetes",         icon: "🩸" },
-    { id: "hypertension", label: "Hypertension",     icon: "💓" },
-    { id: "cholesterol",  label: "High Cholesterol", icon: "🫀" },
-    { id: "uric_acid",    label: "High Uric Acid",   icon: "🦴" },
-    { id: "celiac",       label: "Celiac Disease",   icon: "🌾" },
-    { id: "gerd",         label: "GERD / Acidity",   icon: "🔥" },
-    { id: "ckd",          label: "Kidney Disease",   icon: "💧" },
-    { id: "fatty_liver",  label: "Fatty Liver",      icon: "🫗" },
+    // Metabolic & blood sugar
+    { id: "diabetes",        label: "Diabetes (Type 2)",       icon: "🩸", category: "Metabolic & Blood Sugar" },
+    { id: "prediabetes",     label: "Prediabetes",             icon: "📈", category: "Metabolic & Blood Sugar" },
+    { id: "obesity",         label: "Weight Management",       icon: "⚖️", category: "Metabolic & Blood Sugar" },
+    { id: "metabolic_syndrome", label: "Metabolic Syndrome",   icon: "🧬", category: "Metabolic & Blood Sugar" },
+
+    // Heart & blood pressure
+    { id: "hypertension",    label: "Hypertension",            icon: "💓", category: "Heart & Blood Pressure" },
+    { id: "cholesterol",     label: "High Cholesterol",        icon: "🫀", category: "Heart & Blood Pressure" },
+    { id: "triglycerides",   label: "High Triglycerides",      icon: "🧪", category: "Heart & Blood Pressure" },
+    { id: "heart_disease",   label: "Heart Disease (CAD)",     icon: "❤️", category: "Heart & Blood Pressure" },
+    { id: "low_bp",          label: "Low Blood Pressure",      icon: "⬇️", category: "Heart & Blood Pressure" },
+
+    // Kidney & liver
+    { id: "ckd",             label: "Kidney Disease (CKD)",    icon: "💧", category: "Kidney & Liver" },
+    { id: "kidney_stones",   label: "Kidney Stones",           icon: "🪨", category: "Kidney & Liver" },
+    { id: "fatty_liver",     label: "Fatty Liver",             icon: "🫗", category: "Kidney & Liver" },
+    { id: "cirrhosis",       label: "Liver Cirrhosis",         icon: "🧫", category: "Kidney & Liver" },
+
+    // Digestive
+    { id: "gerd",            label: "GERD / Acidity",          icon: "🔥", category: "Digestive" },
+    { id: "ibs",             label: "IBS",                     icon: "🌀", category: "Digestive" },
+    { id: "celiac",          label: "Celiac Disease",          icon: "🌾", category: "Digestive" },
+    { id: "ibd",             label: "Crohn's / Colitis",       icon: "🩹", category: "Digestive" },
+    { id: "gallstones",      label: "Gallstones",              icon: "🟡", category: "Digestive" },
+    { id: "lactose",         label: "Lactose Intolerance",     icon: "🥛", category: "Digestive" },
+
+    // Joint & bone
+    { id: "uric_acid",       label: "High Uric Acid / Gout",   icon: "🦴", category: "Joint & Bone" },
+    { id: "osteoporosis",    label: "Osteoporosis",            icon: "🦵", category: "Joint & Bone" },
+    { id: "rheumatoid",      label: "Rheumatoid Arthritis",    icon: "🖐️", category: "Joint & Bone" },
+
+    // Hormonal & reproductive
+    { id: "hypothyroid",     label: "Hypothyroidism",          icon: "🦋", category: "Hormonal & Reproductive" },
+    { id: "hyperthyroid",    label: "Hyperthyroidism",         icon: "⚡", category: "Hormonal & Reproductive" },
+    { id: "pcos",            label: "PCOS / PCOD",             icon: "🌙", category: "Hormonal & Reproductive" },
+    { id: "gestational_diabetes", label: "Gestational Diabetes", icon: "🤰", category: "Hormonal & Reproductive" },
+    { id: "menopause",       label: "Menopause",               icon: "🍃", category: "Hormonal & Reproductive" },
+
+    // Blood & nutrients
+    { id: "anemia",          label: "Anemia / Iron Deficiency", icon: "🔴", category: "Blood & Nutrients" },
+    { id: "vitamin_d",       label: "Vitamin D Deficiency",    icon: "☀️", category: "Blood & Nutrients" },
+
+    // Allergies & intolerances
+    { id: "nut_allergy",     label: "Nut Allergy",             icon: "🥜", category: "Allergies & Intolerances" },
+    { id: "shellfish_allergy", label: "Shellfish Allergy",     icon: "🦐", category: "Allergies & Intolerances" },
+    { id: "gluten_sensitivity", label: "Gluten Sensitivity",   icon: "🍞", category: "Allergies & Intolerances" },
+
+    // Other
+    { id: "migraine",        label: "Migraine",                icon: "🤕", category: "Other" },
+    { id: "epilepsy",        label: "Epilepsy",                icon: "🧠", category: "Other" },
+    { id: "cancer_support",  label: "Cancer / Chemo Support",  icon: "🎗️", category: "Other" },
+    { id: "post_surgery",    label: "Post-Surgery Recovery",   icon: "🩺", category: "Other" },
+  ];
+
+  const CATEGORY_ORDER = [
+    "Metabolic & Blood Sugar",
+    "Heart & Blood Pressure",
+    "Kidney & Liver",
+    "Digestive",
+    "Joint & Bone",
+    "Hormonal & Reproductive",
+    "Blood & Nutrients",
+    "Allergies & Intolerances",
+    "Other",
   ];
 
   const state = {
@@ -18,7 +75,9 @@
   };
 
   const $ = (sel) => document.querySelector(sel);
-  const grid = $("#condition-grid");
+  const groupsContainer = $("#condition-groups");
+  const searchInput = $("#condition-search");
+  const noMatch = $("#no-match");
   const generateBtn = $("#generate-btn");
   const skeleton = $("#skeleton");
   const errorBox = $("#error-box");
@@ -41,19 +100,51 @@
     });
   }
 
-  /* ---------------- Condition chips ---------------- */
-  function renderChips() {
-    grid.innerHTML = "";
-    CONDITIONS.forEach((c) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "chip";
-      btn.dataset.id = c.id;
-      btn.setAttribute("aria-pressed", "false");
-      btn.innerHTML = `<span class="chip__icon" aria-hidden="true">${c.icon}</span><span class="chip__label">${c.label}</span>`;
-      btn.addEventListener("click", () => toggleCondition(c.id, btn));
-      grid.appendChild(btn);
+  /* ---------------- Condition chips (grouped + searchable) ---------------- */
+  function renderChips(filterText = "") {
+    const term = filterText.trim().toLowerCase();
+    groupsContainer.innerHTML = "";
+    let anyVisible = false;
+
+    CATEGORY_ORDER.forEach((category) => {
+      const items = CONDITIONS.filter(
+        (c) => c.category === category && (term === "" || c.label.toLowerCase().includes(term))
+      );
+      if (items.length === 0) return;
+      anyVisible = true;
+
+      const section = document.createElement("div");
+      section.className = "condition-category";
+
+      const heading = document.createElement("h3");
+      heading.className = "condition-category__title";
+      heading.textContent = category;
+      section.appendChild(heading);
+
+      const grid = document.createElement("div");
+      grid.className = "chip-grid";
+
+      items.forEach((c) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "chip";
+        btn.dataset.id = c.id;
+        btn.setAttribute("aria-pressed", state.selected.has(c.id) ? "true" : "false");
+        btn.innerHTML = `<span class="chip__icon" aria-hidden="true">${c.icon}</span><span class="chip__label">${c.label}</span>`;
+        btn.addEventListener("click", () => toggleCondition(c.id, btn));
+        grid.appendChild(btn);
+      });
+
+      section.appendChild(grid);
+      groupsContainer.appendChild(section);
     });
+
+    if (term !== "" && !anyVisible) {
+      $("#no-match-term").textContent = filterText.trim();
+      noMatch.classList.remove("hidden");
+    } else {
+      noMatch.classList.add("hidden");
+    }
   }
 
   function toggleCondition(id, btn) {
@@ -65,6 +156,10 @@
       btn.setAttribute("aria-pressed", "true");
     }
     updateGenerateButton();
+  }
+
+  function initSearch() {
+    searchInput.addEventListener("input", (e) => renderChips(e.target.value));
   }
 
   function updateGenerateButton() {
@@ -253,6 +348,7 @@
   document.addEventListener("DOMContentLoaded", () => {
     initDisclaimer();
     renderChips();
+    initSearch();
     updateGenerateButton();
     initAccordions();
     initResultActions();
