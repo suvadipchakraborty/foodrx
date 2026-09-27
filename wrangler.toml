@@ -1,0 +1,14 @@
+name = "my-diet"
+main = "src/worker.js"
+compatibility_date = "2025-01-01"
+
+# Serves everything in /public as static assets. Requests that don't match
+# a static file (like POST /api/generate) fall through to the Worker code
+# in src/worker.js, which is also given a binding (ASSETS) to serve those
+# static files itself when needed.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# Set the Gemini API key as an encrypted secret (do NOT put it here):
+#   wrangler secret put GEMINI_API_KEY
