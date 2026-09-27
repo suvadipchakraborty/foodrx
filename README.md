@@ -49,7 +49,7 @@ wrangler deploy
 ```
 
 This publishes the Worker (which also serves `public/` as static assets)
-to `https://my-diet.<your-subdomain>.workers.dev/`.
+to `https://foodrx.<your-subdomain>.workers.dev/`.
 
 ## 4. Deploying via GitHub sync instead
 
@@ -67,7 +67,7 @@ If you'd rather deploy through Cloudflare's Git integration:
 
 - `wrangler.toml` is already set to `name = "my-diet"`, matching the OG/share
   URL baked into `index.html` and `app.js`
-  (`https://my-diet.suvadipchakraborty.workers.dev/`). If you deploy under a
+  (`https://foodrx.suvadipchakraborty.workers.dev/`). If you deploy under a
   different Worker name or a custom domain, update those two files' URLs to
   match.
 - The OG/share image is a **PNG** (`public/assets/og-image.png`, 1200×630)
