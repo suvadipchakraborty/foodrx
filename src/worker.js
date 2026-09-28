@@ -22,7 +22,17 @@
  * -----------------------------------------------------------------------
  */
 
-const GEMINI_MODEL = "gemini-3.8-flash";
+// Tried in order. If a model keeps failing (overloaded / unavailable), the
+// next one is used. Override with a comma-separated GEMINI_MODELS variable
+// in wrangler.toml [vars] or the dashboard if you want different models.
+const DEFAULT_MODELS = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+
+const ATTEMPTS_PER_MODEL = 3;
+const BASE_DELAY_MS = 600; // 600ms, 1.2s, (2.4s) + jitter
+const MAX_RETRY_AFTER_MS = 4000;
+const TOTAL_BUDGET_MS = 25000; // stop retrying after this long overall
+const REQUEST_TIMEOUT_MS = 12000; // per Gemini call
+const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 const GEMINI_URL = (model, key) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
@@ -115,59 +125,151 @@ async function handleGenerate(request, env) {
     },
   };
 
-  let geminiRes;
-  try {
-    geminiRes = await fetch(GEMINI_URL(GEMINI_MODEL, env.GEMINI_API_KEY), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(geminiBody),
-    });
-  } catch {
-    return jsonResponse({ error: "Could not reach the AI service. Please try again." }, 502);
-  }
+  const models = getModels(env);
+  const result = await callGeminiWithFallback(models, env.GEMINI_API_KEY, geminiBody);
 
-  if (!geminiRes.ok) {
-    const errText = await geminiRes.text().catch(() => "");
-    console.error("Gemini error", geminiRes.status, errText);
-
-    // Surface the real reason (truncated) so it's visible in the app's
-    // error box without needing to check Worker logs separately.
-    let detail = "";
-    try {
-      const parsedErr = JSON.parse(errText);
-      detail = parsedErr?.error?.message || "";
-    } catch {
-      detail = errText;
-    }
-    detail = detail.slice(0, 200);
-
-    return jsonResponse(
-      {
-        error: `AI service error (${geminiRes.status})${detail ? ": " + detail : ""}`,
-      },
-      502
-    );
-  }
-
-  const geminiJson = await geminiRes.json().catch(() => null);
-  const text = geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!text) {
-    return jsonResponse({ error: "The AI service returned an unexpected response." }, 502);
-  }
-
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return jsonResponse({ error: "Could not parse the generated list. Please try again." }, 502);
+  if (!result.ok) {
+    console.error("Gemini failed", JSON.stringify(result.log));
+    return jsonResponse({ error: result.message, retryable: result.retryable }, result.httpStatus);
   }
 
   return jsonResponse({
-    greenLight: parsed.greenLight ?? [],
-    redLight: parsed.redLight ?? [],
-    explanation: parsed.explanation ?? "",
+    greenLight: Array.isArray(result.data.greenLight) ? result.data.greenLight : [],
+    redLight: Array.isArray(result.data.redLight) ? result.data.redLight : [],
+    explanation: typeof result.data.explanation === "string" ? result.data.explanation : "",
   });
+}
+
+function getModels(env) {
+  const fromEnv = (env.GEMINI_MODELS || "")
+    .split(",")
+    .map((m) => m.trim())
+    .filter(Boolean);
+  return fromEnv.length ? fromEnv : DEFAULT_MODELS;
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function backoffDelay(attempt, retryAfterHeader) {
+  const retryAfterSec = Number(retryAfterHeader);
+  if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) {
+    return Math.min(retryAfterSec * 1000, MAX_RETRY_AFTER_MS);
+  }
+  const exp = BASE_DELAY_MS * 2 ** attempt;
+  return exp + Math.random() * 300; // jitter avoids synchronized retries
+}
+
+// Extract and validate the model's JSON. Returns object or null.
+function parseGeminiPayload(geminiJson) {
+  const parts = geminiJson?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return null;
+  const text = parts
+    .filter((p) => typeof p?.text === "string" && !p.thought)
+    .map((p) => p.text)
+    .join("")
+    .trim();
+  if (!text) return null;
+  try {
+    const obj = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+    if (!Array.isArray(obj?.greenLight) || !Array.isArray(obj?.redLight)) return null;
+    if (obj.greenLight.length === 0 && obj.redLight.length === 0) return null;
+    return obj;
+  } catch {
+    return null;
+  }
+}
+
+async function callGeminiWithFallback(models, apiKey, body) {
+  const started = Date.now();
+  const log = [];
+  let lastKind = "unavailable"; // "unavailable" | "bad_response" | "config"
+
+  for (const model of models) {
+    for (let attempt = 0; attempt < ATTEMPTS_PER_MODEL; attempt++) {
+      if (Date.now() - started > TOTAL_BUDGET_MS) {
+        return failure(lastKind, log);
+      }
+
+      let res;
+      try {
+        res = await fetch(GEMINI_URL(model, apiKey), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+      } catch (err) {
+        // Network error or timeout: transient, retry.
+        log.push({ model, attempt, error: String(err?.name || err) });
+        lastKind = "unavailable";
+        if (attempt < ATTEMPTS_PER_MODEL - 1) await sleep(backoffDelay(attempt));
+        continue;
+      }
+
+      if (res.ok) {
+        const json = await res.json().catch(() => null);
+        const data = parseGeminiPayload(json);
+        if (data) return { ok: true, data, model };
+        // Empty / malformed / blocked output: retry, it is often a one-off.
+        log.push({ model, attempt, status: 200, error: "unusable_response", finishReason: json?.candidates?.[0]?.finishReason });
+        lastKind = "bad_response";
+        if (attempt < ATTEMPTS_PER_MODEL - 1) await sleep(backoffDelay(attempt));
+        continue;
+      }
+
+      const errText = await res.text().catch(() => "");
+      log.push({ model, attempt, status: res.status, body: errText.slice(0, 300) });
+
+      if (RETRYABLE_STATUS.has(res.status)) {
+        lastKind = "unavailable";
+        if (attempt < ATTEMPTS_PER_MODEL - 1) {
+          await sleep(backoffDelay(attempt, res.headers.get("Retry-After")));
+          continue;
+        }
+        break; // out of attempts for this model, try the next one
+      }
+
+      if (res.status === 404) {
+        // Model name doesn't exist for this key: skip straight to the next model.
+        lastKind = "unavailable";
+        break;
+      }
+
+      // 400 / 401 / 403 etc: our request or key is wrong. Retrying or switching
+      // models will not help, so fail fast and keep details in logs only.
+      return failure("config", log);
+    }
+  }
+
+  return failure(lastKind, log);
+}
+
+function failure(kind, log) {
+  if (kind === "config") {
+    return {
+      ok: false,
+      httpStatus: 500,
+      retryable: false,
+      message: "The AI service is not set up correctly. Please contact the site owner.",
+      log,
+    };
+  }
+  if (kind === "bad_response") {
+    return {
+      ok: false,
+      httpStatus: 502,
+      retryable: true,
+      message: "The AI returned an unusable answer. Please tap Generate again.",
+      log,
+    };
+  }
+  return {
+    ok: false,
+    httpStatus: 503,
+    retryable: true,
+    message: "The AI is very busy right now. We tried several times, so please try again in a minute.",
+    log,
+  };
 }
 
 function jsonResponse(obj, status = 200) {
